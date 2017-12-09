@@ -4,13 +4,14 @@
 ## 使用方法
 mainを走らせる
 ```
-  git clone "this repository"
+  git clone https://github.com/shilfol/pickupcolor.git
+  cd pickupcolor
   go run imagefile      //引数なし 6色
   go run imagefile 7    //引数指定 7色
 
 ```
 
-## 出力テスト
+## 出力
 ```
 $ go run main.go yurufuwaplus.jpg 7
 distance:  2028.382914985505
@@ -25,7 +26,9 @@ $ ls
 README.md  main.go  yurufuwaplus-pickupcolor7.png  yurufuwaplus.jpg 
 
 ```
+"元のファイル名"-pickupcolor"色数".pngとして特徴色がまとまった画像が出力されます
 
 #### 参考    
 http://mrkn.hatenablog.com/entry/2015/07/12/000618
+
 http://business.nikkeibp.co.jp/atclbdt/15/258678/071500002/?ST=print
