@@ -9,6 +9,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +20,23 @@ import (
 type imageVector struct {
 	vector colorful.Color
 	group  int
+}
+
+type imageVectors []imageVector
+
+func (v imageVectors) Len() int {
+	return len(v)
+}
+
+func (v imageVectors) Swap(i, j int) {
+	v[i], v[j] = v[j], v[i]
+}
+
+func (v imageVectors) Less(i, j int) bool {
+	H1, _, _ := v[i].vector.Hcl()
+	H2, _, _ := v[j].vector.Hcl()
+
+	return H1 < H2
 }
 
 func main() {
@@ -38,7 +56,7 @@ func main() {
 
 	imgrect := img.Bounds()
 
-	imageVectors := []imageVector{}
+	imageVectors := imageVectors{}
 
 	for h := imgrect.Min.Y; h < imgrect.Max.Y; h++ {
 		for w := imgrect.Min.X; w < imgrect.Max.X; w++ {
@@ -67,6 +85,8 @@ func main() {
 	results, distance := kmeans(imageVectors, clusterSize)
 
 	fmt.Println("distance: ", distance)
+
+	sort.Sort(results)
 
 	for i, result := range results {
 		fmt.Println(i, result.vector.Hex())
@@ -97,9 +117,9 @@ func main() {
 	png.Encode(f, outimage)
 }
 
-func kmeans(vectors []imageVector, size int) ([]imageVector, float64) {
+func kmeans(vectors imageVectors, size int) (imageVectors, float64) {
 	distance := float64(len(vectors))
-	resultVector := make([]imageVector, size)
+	resultVector := make(imageVectors, size)
 	for count := 0; count < 16; count++ {
 		// debug
 		//fmt.Println("exec: ", count)
@@ -115,14 +135,14 @@ func kmeans(vectors []imageVector, size int) ([]imageVector, float64) {
 	return resultVector, distance
 }
 
-func execKmeans(vectors []imageVector, size int) ([]imageVector, float64) {
+func execKmeans(vectors imageVectors, size int) (imageVectors, float64) {
 	resultVectors := initVector(vectors, size)
 
 	for i := 0; i < len(vectors); i++ {
 		vectors[i].group = detectGroup(vectors[i], resultVectors)
 	}
 
-	copyVectors := make([]imageVector, len(resultVectors))
+	copyVectors := make(imageVectors, len(resultVectors))
 	for {
 		copy(copyVectors, resultVectors)
 		for i := 0; i < len(resultVectors); i++ {
@@ -150,7 +170,7 @@ func calcDistance(vector, cluster imageVector) float64 {
 	return distance
 }
 
-func calcClusterDistance(vectors, clusters []imageVector) float64 {
+func calcClusterDistance(vectors, clusters imageVectors) float64 {
 	distance := 0.0
 	for _, vector := range vectors {
 		for _, cluster := range clusters {
@@ -164,10 +184,10 @@ func calcClusterDistance(vectors, clusters []imageVector) float64 {
 }
 
 //FIXME kmeans++ は初期ベクトルを均等に散らす必要がある
-func initVector(vectors []imageVector, size int) []imageVector {
-	resultVectors := make([]imageVector, size)
+func initVector(vectors imageVectors, size int) imageVectors {
+	resultVectors := make(imageVectors, size)
 
-	tmpVectors := make([]imageVector, size)
+	tmpVectors := make(imageVectors, size)
 
 	for i := 0; i < size; i++ {
 		tmpVector := imageVector{colorful.Color{rand.Float64(), rand.Float64(), rand.Float64()}, i + 1}
@@ -179,7 +199,7 @@ func initVector(vectors []imageVector, size int) []imageVector {
 	return resultVectors
 }
 
-func detectGroup(vector imageVector, clusters []imageVector) int {
+func detectGroup(vector imageVector, clusters imageVectors) int {
 	group := -1
 	distance := 1024.0 // 高々 1.0^2 * 3だが一応高めに設定
 
@@ -193,7 +213,7 @@ func detectGroup(vector imageVector, clusters []imageVector) int {
 	return group
 }
 
-func resetCenterVector(vectors []imageVector, cluster imageVector) imageVector {
+func resetCenterVector(vectors imageVectors, cluster imageVector) imageVector {
 	newVector := imageVector{}
 	newVector.group = cluster.group
 	count := 0.0
@@ -219,7 +239,7 @@ func resetCenterVector(vectors []imageVector, cluster imageVector) imageVector {
 
 }
 
-func checkEqual(prev, after []imageVector) bool {
+func checkEqual(prev, after imageVectors) bool {
 	if len(prev) != len(after) {
 		return false
 	}
