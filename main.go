@@ -9,6 +9,7 @@ import (
 	"log"
 	"math/rand"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -52,13 +53,28 @@ func main() {
 		}
 	}
 	rand.Seed(time.Now().UnixNano())
-	results := kmeans(imageVectors)
+
+	// クラスタ数は仮置き
+	clusterSize := 6
+
+	if len(os.Args) > 2 {
+		argSize, err := strconv.Atoi(os.Args[2])
+		if err == nil {
+			clusterSize = argSize
+		}
+	}
+
+	results, distance := kmeans(imageVectors, clusterSize)
+
+	fmt.Println("distance: ", distance)
 
 	for i, result := range results {
 		fmt.Println(i, result.vector.Hex())
 	}
-	outimage := image.NewRGBA(image.Rect(0, 0, 960, 320))
-	for x := 0; x < 960; x++ {
+
+	imageWidth := 160 * clusterSize
+	outimage := image.NewRGBA(image.Rect(0, 0, imageWidth, 320))
+	for x := 0; x < imageWidth; x++ {
 		for y := 0; y < 320; y++ {
 			vec := results[int(x/160)].vector
 			r, g, b := vec.RGB255()
@@ -71,7 +87,7 @@ func main() {
 	if len(filename) < 1 {
 		return
 	}
-	newfilename := filename[0] + "-pickupcolor.png"
+	newfilename := filename[0] + "-pickupcolor" + strconv.Itoa(clusterSize) + ".png"
 	f, err = os.OpenFile(newfilename, os.O_WRONLY|os.O_CREATE, 0666)
 	if err != nil {
 		log.Fatal(err)
@@ -81,14 +97,26 @@ func main() {
 	png.Encode(f, outimage)
 }
 
-func kmeans(vectors []imageVector) []imageVector {
-	resultVectors := []imageVector{}
+func kmeans(vectors []imageVector, size int) ([]imageVector, float64) {
+	distance := float64(len(vectors))
+	resultVector := make([]imageVector, size)
+	for count := 0; count < 16; count++ {
+		// debug
+		//fmt.Println("exec: ", count)
+		tmpVector, tmpDistance := execKmeans(vectors, size)
 
-	//FIXME kmeans++ は初期ベクトルを均等に散らす必要がある
-	for i := 1; i <= 6; i++ {
-		tmpVector := imageVector{colorful.Color{rand.Float64(), rand.Float64(), rand.Float64()}, i}
-		resultVectors = append(resultVectors, tmpVector)
+		if distance > tmpDistance {
+			//debug
+			//fmt.Println(distance, tmpDistance, count)
+			copy(resultVector, tmpVector)
+			distance = tmpDistance
+		}
 	}
+	return resultVector, distance
+}
+
+func execKmeans(vectors []imageVector, size int) ([]imageVector, float64) {
+	resultVectors := initVector(vectors, size)
 
 	for i := 0; i < len(vectors); i++ {
 		vectors[i].group = detectGroup(vectors[i], resultVectors)
@@ -109,6 +137,45 @@ func kmeans(vectors []imageVector) []imageVector {
 		}
 	}
 
+	distance := calcClusterDistance(vectors, resultVectors)
+
+	return resultVectors, distance
+}
+
+func calcDistance(vector, cluster imageVector) float64 {
+	distance := (vector.vector.R - cluster.vector.R) * (vector.vector.R - cluster.vector.R)
+	distance += (vector.vector.G - cluster.vector.G) * (vector.vector.G - cluster.vector.G)
+	distance += (vector.vector.B - cluster.vector.B) * (vector.vector.B - cluster.vector.B)
+
+	return distance
+}
+
+func calcClusterDistance(vectors, clusters []imageVector) float64 {
+	distance := 0.0
+	for _, vector := range vectors {
+		for _, cluster := range clusters {
+			if cluster.group == vector.group {
+				distance += calcDistance(vector, cluster)
+				break
+			}
+		}
+	}
+	return distance
+}
+
+//FIXME kmeans++ は初期ベクトルを均等に散らす必要がある
+func initVector(vectors []imageVector, size int) []imageVector {
+	resultVectors := make([]imageVector, size)
+
+	tmpVectors := make([]imageVector, size)
+
+	for i := 0; i < size; i++ {
+		tmpVector := imageVector{colorful.Color{rand.Float64(), rand.Float64(), rand.Float64()}, i + 1}
+		tmpVectors[i] = tmpVector
+	}
+
+	copy(resultVectors, tmpVectors)
+
 	return resultVectors
 }
 
@@ -117,10 +184,7 @@ func detectGroup(vector imageVector, clusters []imageVector) int {
 	distance := 1024.0 // 高々 1.0^2 * 3だが一応高めに設定
 
 	for _, cluster := range clusters {
-		tmpdistance := (vector.vector.R - cluster.vector.R) * (vector.vector.R - cluster.vector.R)
-		tmpdistance += (vector.vector.G - cluster.vector.G) * (vector.vector.G - cluster.vector.G)
-		tmpdistance += (vector.vector.B - cluster.vector.B) * (vector.vector.B - cluster.vector.B)
-
+		tmpdistance := calcDistance(vector, cluster)
 		if distance > tmpdistance {
 			distance = tmpdistance
 			group = cluster.group
@@ -147,14 +211,15 @@ func resetCenterVector(vectors []imageVector, cluster imageVector) imageVector {
 		newVector.vector.G /= count
 		newVector.vector.B /= count
 	} else {
-		fmt.Println("no members")
+		//debug
+		//fmt.Println("no members")
 	}
 
 	return newVector
 
 }
 
-func checkEqual(prev []imageVector, after []imageVector) bool {
+func checkEqual(prev, after []imageVector) bool {
 	if len(prev) != len(after) {
 		return false
 	}
