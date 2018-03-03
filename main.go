@@ -12,6 +12,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/lucasb-eyer/go-colorful"
@@ -37,6 +38,11 @@ func (v imageVectors) Less(i, j int) bool {
 	H2, _, _ := v[j].vector.Hcl()
 
 	return H1 < H2
+}
+
+type kmeansVector struct {
+	vector   imageVectors
+	distance float64
 }
 
 func main() {
@@ -118,24 +124,31 @@ func main() {
 }
 
 func kmeans(vectors imageVectors, size int) (imageVectors, float64) {
+	loopCount := 16
 	distance := float64(len(vectors))
 	resultVector := make(imageVectors, size)
-	for count := 0; count < 16; count++ {
-		// debug
-		//fmt.Println("exec: ", count)
-		tmpVector, tmpDistance := execKmeans(vectors, size)
 
-		if distance > tmpDistance {
-			//debug
-			//fmt.Println(distance, tmpDistance, count)
-			copy(resultVector, tmpVector)
-			distance = tmpDistance
+	vecchan := make(chan *kmeansVector, loopCount)
+
+	wg := &sync.WaitGroup{}
+
+	for count := 0; count < loopCount; count++ {
+		wg.Add(1)
+		go execKmeans(vectors, size, wg, vecchan)
+	}
+	wg.Wait()
+	close(vecchan)
+
+	for vec := range vecchan {
+		if distance > vec.distance {
+			copy(resultVector, vec.vector)
+			distance = vec.distance
 		}
 	}
 	return resultVector, distance
 }
 
-func execKmeans(vectors imageVectors, size int) (imageVectors, float64) {
+func execKmeans(vectors imageVectors, size int, wg *sync.WaitGroup, ch chan *kmeansVector) {
 	resultVectors := initVector(vectors, size)
 
 	for i := 0; i < len(vectors); i++ {
@@ -159,7 +172,12 @@ func execKmeans(vectors imageVectors, size int) (imageVectors, float64) {
 
 	distance := calcClusterDistance(vectors, resultVectors)
 
-	return resultVectors, distance
+	returnVec := &kmeansVector{
+		vector:   resultVectors,
+		distance: distance,
+	}
+	ch <- returnVec
+	wg.Done()
 }
 
 func calcDistance(vector, cluster imageVector) float64 {
